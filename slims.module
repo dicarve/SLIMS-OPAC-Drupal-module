@@ -1,0 +1,315 @@
+<?php
+/**
+ * @file
+ * Enables your site integrate with SLiMS library application OPAC
+ * Author: Arie Nugraha (dicarve@gmail.com)
+ * Licensed under GNU GPL Version 3
+ *
+ */
+
+/**
+ * Implementation of hook_help().
+ */
+function slims_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#slims':
+      $output = '<p>'. t('This module integrate Senayan Library Management System (SLiMS) OPAC to Drupal.') .'</p>';
+      return $output;
+  }
+}
+
+/**
+ * Implementation of hook_init().
+ */
+function slims_init() {
+  drupal_add_css(drupal_get_path('module', 'slims') .'/slims.css');
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function slims_perm() {
+  return array('view OPAC', 'view catalog detail', 'search catalog', 'slims settings', 'allow advanced search');
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function slims_menu() {
+  $items['slims'] = array(
+    'title' => 'Online Access Public Catalog',
+    'page callback' => 'slims_opac',
+    'access arguments' => array('view OPAC'),
+    'type' => MENU_NORMAL_ITEM
+  );
+
+  $items['slims/search'] = array(
+    'title' => 'Search Result',
+    'page callback' => 'slims_opac',
+    'access arguments' => array('view OPAC'),
+    'type' => MENU_CALLBACK
+  );
+
+  $items['slims/detail'] = array(
+    'title' => 'Catalog Detail',
+    'page callback' => 'slims_detail',
+    'access arguments' => array('view catalog detail'),
+    'type' => MENU_CALLBACK
+  );
+
+  $items['admin/settings/slims'] = array(
+    'title' => 'SLiMS OPAC Configuration',
+    'description' => 'Configuration for SLiMS OPAC integration.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('slims_config'),
+    'access arguments' => array('slims settings'),
+    'type' => MENU_NORMAL_ITEM
+  );
+
+  return $items;
+}
+
+
+/**
+ * Implementation of hook_block().
+ *
+ * Generates a block containing the latest slims.
+ */
+function slims_block($op = 'list', $delta = 0) {
+  if (user_access('view OPAC')) {
+    if ($op == 'list') {
+      $blocks[0]['info'] = t('View most recent library catalogs data');
+      return $blocks;
+    }
+    else if ($op == 'view') {
+      $slims_path = drupal_get_path('module','slims');
+      require_once $slims_path.'/drupalslims.inc';
+      require_once $slims_path.'/modsxmlslims.inc';
+      require_once $slims_path.'/paging.inc';
+
+      $block_search = variable_get('slims_block_search', '');
+      $num_to_show = variable_get('slims_block_titles', 5);
+
+      $catalog_list = slims_biblio_simple($block_search, $num_to_show);
+      $block['subject'] = t('Recent Catalog');
+      $block['content'] = $catalog_list;
+      $block['content'] .= '<div class="more-records">'.l(t('More catalog records'), 'slims').'</div>';
+      return $block;
+    }
+  }
+}
+
+
+/**
+ * View SLiMS OPAC
+ *
+ */
+function slims_opac() {
+  $slims_path = drupal_get_path('module','slims');
+  require_once $slims_path.'/drupalslims.inc';
+  require_once $slims_path.'/modsxmlslims.inc';
+  require_once $slims_path.'/paging.inc';
+  $output = '';
+
+  $keywords = preg_replace('@^slims(\/search\/)?@i', '', $_GET['q']);
+  $keywords = trim($keywords);
+  // $output .= 'Keywords: '.$keywords;
+  // simple search form
+  $output .= drupal_get_form('slims_search_simple');
+  // advanced search
+  $output .= drupal_get_form('slims_search_advanced');
+  // result
+  $output .= slims_biblio($keywords);
+  return $output;
+}
+
+
+/**
+ * View SLiMS OPAC
+ *
+ */
+function slims_detail() {
+  global $user;
+  $slims_path = drupal_get_path('module','slims');
+  require_once $slims_path.'/drupalslims.inc';
+  require_once $slims_path.'/modsxmlslims.inc';
+
+  // record ID
+  $current_path = $_GET['q'];
+  // get ID of record from current drupal path
+  $recid = str_replace('slims/detail/', '', $current_path);
+  $output = slims_record_detail($recid);
+  return $output;
+}
+
+
+/**
+ * Menu callback for the SLiMS Configuration.
+ */
+function slims_config() {
+  $form['settings_general'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('General settings'),
+    '#collapsible' => false,
+  );
+  $form['settings_general']['slims_base_url'] = array(
+    '#type' => 'textfield',
+    '#title' => t('SLiMS Base URL'),
+    '#default_value' => variable_get('slims_base_url', 'http://127.0.0.1/slims'),
+    '#size' => 100,
+    '#maxlength' => 250,
+    '#description' => t('The Base URL of Senayan Library Management System (SLiMS) instalation to be integrated.
+        It MUST have XML result list enabled!')
+  );
+
+  return system_settings_form($form);
+}
+
+
+/**
+ * Form elements for simple search
+ *
+ */
+function slims_search_simple($type = 'simple') {
+  $form['simple_search'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Simple Search'),
+    '#collapsible' => true,
+  );
+
+  $form['simple_search']['keywords'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Keywords'),
+    '#default_value' => '',
+    '#size' => 100,
+    '#maxlength' => 250,
+    '#description' => t('Put one or more keywords to search specific collections')
+  );
+
+  $form['simple_search']['search'] = array(
+    '#type' => 'submit',
+    '#title' => t('Search'),
+    '#default_value' => 'Search',
+    '#submit' => array('slims_search')
+  );
+
+  return $form;
+}
+
+
+/**
+ * Form elements for advanced search
+ *
+ */
+function slims_search_advanced() {
+  // advanced search
+  $form['advanced_search'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Advanced Search'),
+    '#collapsible' => true,
+    '#collapsed' => true
+  );
+
+  $form['advanced_search']['title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Title'),
+    '#default_value' => '',
+    '#size' => 100,
+    '#maxlength' => 250,
+    '#description' => t('One or more words contained in the title of collection')
+  );
+
+  $form['advanced_search']['author'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Author(s)'),
+    '#default_value' => '',
+    '#size' => 50,
+    '#maxlength' => 250,
+    '#description' => t('Full or part of authors name')
+  );
+
+  $form['advanced_search']['subject'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Subject(s)'),
+    '#default_value' => '',
+    '#size' => 50,
+    '#maxlength' => 250,
+    '#description' => t('Subjects or topics of collection')
+  );
+
+  $form['advanced_search']['publisher'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Publisher'),
+    '#default_value' => '',
+    '#size' => 50,
+    '#maxlength' => 250,
+    '#description' => t('Part of or full name of Publisher')
+  );
+
+  $form['advanced_search']['isbn'] = array(
+    '#type' => 'textfield',
+    '#title' => t('ISBN'),
+    '#default_value' => '',
+    '#size' => 50,
+    '#maxlength' => 250,
+    '#description' => t('ISBN or ISSN of titles')
+  );
+
+  $form['advanced_search']['searchtype'] = array(
+    '#type' => 'hidden',
+    '#value' => 'adv'
+  );
+
+  $form['advanced_search']['search'] = array(
+    '#type' => 'submit',
+    '#title' => t('Search'),
+    '#default_value' => 'Search',
+    '#submit' => array('slims_search')
+  );
+
+  return $form;
+}
+
+
+function slims_search($form_id, &$form_state) {
+  // show biblio list
+  $keywords = '';
+  if (isset($form_state['values']['keywords']) && trim($form_state['values']['keywords']) != '') {
+      $keywords = trim($_POST['keywords']);
+  }
+
+  // advanced search
+  if (isset($form_state['values']['searchtype']) && $form_state['values']['searchtype'] == 'adv') {
+    if (trim($form_state['values']['title']) != '') {
+        $title = trim($form_state['values']['title']);
+        $keywords .= 'title='.$title.' ';
+    }
+    if (trim($form_state['values']['author']) != '') {
+        $author = trim($form_state['values']['author']);
+        $keywords .= 'author='.$author.' ';
+    }
+    if (trim($form_state['values']['subject']) != '') {
+        $subject = trim($form_state['values']['subject']);
+        $keywords .= 'subject='.$subject.' ';
+    }
+    if (trim($form_state['values']['publisher']) != '') {
+        $publisher = trim($form_state['values']['publisher']);
+        $keywords .= 'publisher='.$publisher.' ';
+    }
+    if (trim($form_state['values']['isbn']) != '') {
+        $isbn = trim($form_state['values']['isbn']);
+        $keywords .= 'isbn='.$isbn.' ';
+    }
+    if (trim($form_state['values']['gmd']) != '0' && trim($form_state['values']['gmd']) != '') {
+        $gmd = trim($form_state['values']['gmd']);
+        $keywords .= 'gmd="'.$gmd.'" ';
+    }
+  }
+
+  if (trim($keywords) == '') {
+    drupal_set_message(t('Please supply one or more keywords to search'), 'error');
+    return;
+  }
+
+  $form_state['redirect'] = 'slims/search/'.$keywords;
+}

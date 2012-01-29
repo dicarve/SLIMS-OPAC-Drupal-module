@@ -1,0 +1,31 @@
+.catalog .slims-record {
+  margin-top: 5px;
+  margin-bottom: 20px;
+  padding-left: 80px;
+  background: url(default-image.png) no-repeat left top;
+  min-height: 110px;
+}
+
+.catalog .slims-record .title {
+  font-weight: bold;
+  font-size: 120%;
+}
+
+.record-detail .detail-label {
+  font-weight: bold;
+  font-size: 120%;
+}
+
+.record-detail .detail-content {
+  margin-bottom: 10px;
+}
+
+.record-detail h2 {
+  margin-bottom: 20px;
+  border-bottom: 2px solid #999;
+}
+
+.catalog-simple .slims-record {
+  margin-left: -10px;
+  padding-left: 15px;
+}
