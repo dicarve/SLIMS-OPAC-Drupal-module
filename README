@@ -1,1 +1,3 @@
-SLiMS - Drupal Integration
+This Drupal module integrate Senayan Library Management System OPAC (Online Catalog) with Drupal easily.
+It cover almost all search power of SLiMS inside Drupal, as it using SLiMS XML Result (in MODS format) feature
+to fetch catalog data.
